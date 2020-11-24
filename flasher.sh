@@ -24,6 +24,7 @@ pre_req () {
 			echo "Error: Command $i not found" >&2
 			exit -1
 		fi
+	done
 	return 0
 }
 
@@ -149,7 +150,7 @@ write_disk () {
 		return 1
 	fi
 	
-	mformat -i "$dev"@@"$(( 512 * EFI_START ))" -T "$(EFI_SIZE)" -F "::" && \
+	mformat -i "$dev"@@"$(( 512 * EFI_START ))" -T "${EFI_SIZE}" -F "::" && \
 	  mmd   -i "$dev"@@"$(( 512 * EFI_START ))" "::efi" && \
 	  mmd   -i "$dev"@@"$(( 512 * EFI_START ))" "::efi/boot" && \
 	  mcopy -i "$dev"@@"$(( 512 * EFI_START ))" "${IPXE_EFI}" "::efi/boot/bootx64.efi"
@@ -168,7 +169,7 @@ compile_only="false"
 for_test_use="false"
 interactive="true"
 
-while [ "$#" -gt 0 ]]; do
+while [ "$#" -gt 0 ]; do
 	key="$1"
 	case "$key" in
 		--once)
@@ -205,4 +206,4 @@ if [ ! -t 0 ]; then
 	interactive="false"
 fi
 
-
+echo Build, flashing
