@@ -18,7 +18,7 @@ CLI_PART_NAME="thupxeroot"
 
 pre_req () {
 	local tools=( "sfdisk" "sgdisk" "dd" "xxd" "uuidgen" "lsblk" "base64" "partx" "mcopy" "mformat" "mmd" )
-	for i in "${tools[@]}"; do
+	for i in "${tools[@]}" "$@"; do
 		command -v "$i" > /dev/null
 		if [ "$?" -ne 0 ]; then
 			echo "Error: Command $i not found" >&2
@@ -163,11 +163,25 @@ write_disk () {
 	return 0
 }
 
-target_device=""
+work_on_disk () {
+	local dev="$1"
+	local ret
+	write_table "$dev"
+	ret=$?
+	if [ "$ret" -ne 0 ]; then
+		return $ret
+	fi
+	write_disk "$dev"
+	if [ "$ret" -ne 0 ]; then
+		return $ret
+	fi
+	return 0
+}
+
+target_devices=( )
 write_once="false"
 compile_only="false"
 for_test_use="false"
-interactive="true"
 
 while [ "$#" -gt 0 ]; do
 	key="$1"
@@ -188,22 +202,44 @@ while [ "$#" -gt 0 ]; do
 			shift
 			break
 		;;
+		--*)
+			echo "Unknown option: $1" >&2
+			exit 1
+		;;
 		*)
-			target_device="$1"
 			break
 	esac
+done
+
+while [ "$#" -gt 0 ]; do
+	target_devices+=( "$1" )
+	shift
 done
 
 if [ "$for_test_use" = "true" ]; then
 	return 2>/dev/null || exit
 fi
 
-if [ "$compile_only" = "true" -o "$write_once" = "true" ]; then
-	interactive="false"
+compile_ipxe
+verify_ipxe_files
+ret=$?
+if [ "$ret" -ne 0 ]; then
+	echo "iPxe compile error: $ERROR"
+	exit $ret
 fi
 
-if [ ! -t 0 ]; then
-	interactive="false"
+if [ "$compile_only" = "true" ]; then
+	exit 0
 fi
 
-echo Build, flashing
+pre_req_add_tool=( )
+if [ "$write_once" = "false" ]; then
+	pre_req_add_tool+=( "inotifywait" )
+fi
+
+pre_req "${pre_req_add_tool[@]}"
+if [ "${#target_devices[@]}" -eq 0 ]; then
+	echo "Device must be specified"
+	exit 1
+fi
+#if [ "$write_once" = 
