@@ -178,6 +178,12 @@ work_on_disk () {
 	return 0
 }
 
+prepend () {
+	while read line; do
+		echo "${1}${line}"
+	done
+}
+
 target_devices=( )
 write_once="false"
 compile_only="false"
@@ -242,4 +248,110 @@ if [ "${#target_devices[@]}" -eq 0 ]; then
 	echo "Device must be specified"
 	exit 1
 fi
-#if [ "$write_once" = 
+if [ "$write_once" = "true" ]; then
+	for dsk in "${target_devices[@]}"; do
+		if [ -b "$dsk" ]; then
+			echo "Writing $dsk"
+			work_on_disk "$dsk" > >(prepend "$dsk: ") 2>&1
+			if [ $? -eq 0 ]; then
+				echo "$dsk: ok"
+			else
+				echo "$dsk: failed because $ERROR"
+			fi
+		else
+			echo "$dsk is not a block device"
+		fi
+	done
+	exit 0
+fi
+
+declare -r ESC="$(echo -ne "\x1b")"
+declare -r SAVE_CUR="${ESC}7"
+declare -r RESTORE_CUR="${ESC}8"
+declare -r COLOR_IDLE="${ESC}[32m"
+declare -r COLOR_BUSY="${ESC}[33m"
+declare -r COLOR_ERROR="${ESC}[31m"
+declare -r COLOR_RST="${ESC}[0m"
+declare -r AUTO_WRAP="${ESC}[?7h"
+declare -r NO_WRAP="${ESC}[?7l"
+declare -r CLEAR_RIGHT="${ESC}[0K"
+
+declare -r DEV_BY_PATH="/dev/disk/by-path"
+
+scroll_area_set () {
+  lines="$(($1 + 1))"
+  echo -n "${SAVE_CUR}${ESC}[${lines};r${RESTORE_CUR}"
+}
+
+scroll_area_restore () {
+  echo -n "${SAVE_CUR}${ESC}[;r${RESTORE_CUR}"
+}
+
+commit_work_on_disk () {
+	local line="$1"
+	local status
+	local color
+	local error
+	shift
+	local dev="$1"
+	(
+		echo -n "${SAVE_CUR}${ESC}[$((line));1f${NO_WRAP}${COLOR_BUSY}●${COLOR_RST} ${dev}${CLEAR_RIGHT}${AUTO_WRAP}${RESTORE_CUR}"
+
+		if [ -b "$DEV_BY_PATH/$file" ]; then
+			work_on_disk "$dev" > >(prepend "$dev: " >&3) 2>&1
+		fi
+		status="$?"
+		color="${COLOR_IDLE}"
+		error=""
+		if [ "$status" -ne 0 ]; then
+			color="${COLOR_ERROR}"
+			error=": ${COLOR_ERROR}$(echo "$ERROR" | tr -d '\n\r')${COLOR_RST}"
+		fi
+		echo -n "${SAVE_CUR}${ESC}[$((line));1f${NO_WRAP}${color}●${COLOR_RST} ${dev}${error}${CLEAR_RIGHT}${AUTO_WRAP}${RESTORE_CUR}"
+	)&
+}
+
+onexit () {
+	if [ "$inotify_PID" ]; then
+		kill -INT "$inotify_PID"
+		inotify_PID=
+	fi
+	wait -f
+	scroll_area_restore
+	exit 0
+}
+
+declare -A disks
+counter=1
+for dsk in "${target_devices[@]}"; do
+	if [[ "$dsk" == *"/"* ]]; then
+		if [ "$(realpath --no-symlinks $(dirname "$dsk"))" != "$DEV_BY_PATH" ]; then
+			echo "$dsk: ignored because it is not in $DEV_BY_PATH"
+			continue
+		fi
+		dsk="$(basename "$dsk")"
+	fi
+	disks["$dsk"]=$counter
+	counter=$((counter + 1))
+done
+unset counter
+
+scroll_area_set "${#disks[@]}"
+trap onexit EXIT INT
+
+coproc inotify {
+	for dsk in "${!disks[@]}"; do
+		echo "$dsk"
+	done
+	exec inotifywait --monitor --event create --format "%f" "$DEV_BY_PATH"
+}
+
+exec {inotify[1]}<&-
+while read file; do
+	if [ -z "$file" ]; then
+		continue
+	fi
+	if [ "${disks["${file}"]+_}" ]; then
+		commit_work_on_disk "${disks["${file}"]}" "${DEV_BY_PATH}/${file}"
+	fi
+done <&"${inotify[0]}" 3> >(tee --append flasher.log)
