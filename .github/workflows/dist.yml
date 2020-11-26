@@ -1,0 +1,43 @@
+name: dist-pub
+
+on:
+  push:
+
+jobs:
+  build:
+    runs-on: ubuntu-18.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+        with:
+          submodules: 'recursive'
+
+      - name: Prepare build environment
+        run: |
+          apt-get update
+          apt-get install binutils-dev liblzma-dev zlib1g-dev
+
+      - name: Build iPxe
+        run: |
+          ./flasher.sh --compile
+
+      - name: Make Package
+        run: |
+          rm -rf /tmp/dist
+          mkdir -p /tmp/dist
+          touch ipxe/.dist
+          tar --create --gzip --numeric-owner --owner root --group root \
+            --transform "s@^@desktop-flasher/@" \
+            -f /tmp/dist/desktop-flasher.tar.gz \
+            flasher.sh \
+            ipxe/.dist \
+            ipxe/src/bin-i386-pcbios/ipxe.hd \
+            ipxe/src/bin-i386-pcbios/mbr.bin \
+            ipxe/src/bin-x86_64-efi/ipxe.efi
+
+      - name: Upload Asset
+        uses: actions/upload-artifact@v2
+        with:
+          name: Desktop Flasher
+          path: /tmp/dist/desktop-flasher.tar.gz
