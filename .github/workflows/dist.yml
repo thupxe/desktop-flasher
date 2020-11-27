@@ -42,3 +42,47 @@ jobs:
         with:
           name: Desktop Flasher
           path: /tmp/dist/desktop-flasher.tar.gz
+  
+  test:
+    runs-on: ubuntu-18.04
+    needs:
+      build
+    steps:
+      - name: Download built ipxe package
+        uses: actions/download-artifact@v2
+        with:
+          name: Desktop Flasher
+
+      - name: Install needed tools
+        run: |
+          sudo apt-get update
+          # tools needed by flasher
+          sudo apt-get -y --no-install-recommends install fdisk gdisk uuid-runtime mtools
+          # tools needed to test result
+          sudo apt-get -y --no-install-recommends install dosfstools qemu-system-x86 ovmf expect
+
+      - name: Setup test env
+        run: |
+          tar -xvz --strip-components 1 -f desktop-flasher.tar.gz
+          truncate -s 10G disk
+          lodev="$(sudo losetup -f)"
+          echo "::set-env name=lodev::${lodev}"
+          sudo losetup "$lodev" disk
+
+      - name: Write Data
+        run: |
+          sudo -E bash --noprofile --norc -eo pipefail << 'EOF'
+            . flasher.sh __TEST__
+            read_serial () {
+              echo "ABCD1234"
+            }
+            set +e
+            work_on_disk "$lodev"
+            ret=$?
+            if [ "$ret" -ne 0 ]; then
+              echo "Write disk error $ERROR"
+            fi
+            exit $ret
+          EOF
+
+      
