@@ -66,7 +66,7 @@ jobs:
           tar -xvz --strip-components 1 -f desktop-flasher.tar.gz
           truncate -s 10G disk
           lodev="$(sudo losetup -f)"
-          echo "::set-env name=lodev::${lodev}"
+          echo "lodev=${lodev}" >> "$GITHUB_ENV"
           sudo losetup "$lodev" disk
 
       - name: Write Data
