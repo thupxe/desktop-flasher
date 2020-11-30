@@ -85,4 +85,34 @@ jobs:
             exit $ret
           EOF
 
-      
+      - name: Load Partition table
+        run: |
+          sudo partx --update "${lodev}"
+
+      - name: Test partition table
+        run: |
+          if !([ -b "${lodev}p1" ] && [ -b "${lodev}p2" ] && [ -b "${lodev}p3" ]); then
+            set +e
+            sudo lsblk "${lodev}"
+            sudo sgdisk -p "${lodev}"
+            echo "Missing parts"
+            exit 1
+          fi
+          label="$(sudo blkid --output value  --match-tag "PARTLABEL" "${lodev}p1")"
+          if [ "$label" != "thupxeroot" ]; then
+            set +e
+            sudo blkid "${lodev}p1"
+            echo "Part label is not correct"
+            exit 1
+          fi
+          partuuid="$(sudo blkid --output value  --match-tag "PARTUUID" "${lodev}p1")"
+          if [ "$partuuid" != "358c2fe6-6a46-534c-8c87-a9988123a761" ]; then
+          set +e
+            sudo blkid "${lodev}p1"
+            echo "Part UUID is not correct"
+            exit 1
+          fi
+
+      - name: Test EFI filesystem
+        run: |
+          sudo fsck.msdos "${lodev}p3"
