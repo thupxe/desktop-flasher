@@ -116,3 +116,18 @@ jobs:
       - name: Test EFI filesystem
         run: |
           sudo fsck.msdos "${lodev}p3"
+
+      - name: Pack up Failed image when failure
+        id: pack_scene
+        if: ${{ failure() }}
+        run: |
+          tar --create --gzip --numeric-owner --owner root --group root \
+            --sparse -f disk.tar.gz disk
+          echo "::set-output name=run::true"
+
+      - name: Upload failed image
+        if: always() && steps.pack_scene.outputs.run == 'true'
+        uses: actions/upload-artifact@v2
+        with:
+          name: Failed Disk Image
+          path: disk.tar.gz
