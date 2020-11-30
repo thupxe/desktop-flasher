@@ -213,6 +213,7 @@ work_on_disk () {
 		return $ret
 	fi
 	write_disk "$dev"
+	ret=$?
 	if [ "$ret" -ne 0 ]; then
 		return $ret
 	fi
