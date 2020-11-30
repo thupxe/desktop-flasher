@@ -191,9 +191,24 @@ write_disk () {
 		return 1
 	fi
 	
-	mformat -i "$dev"@@"$(( 512 * EFI_START ))" -T "${EFI_SIZE}" -F "::" && \
+	# Work around bug fixed in mtools 4.0.20:
+	#  - file/device locking with timeout (rather than immediate failure)
+	# Settle udevd before mtools invocation
+	
+	# Work around missing feature in mtools 4.0.19
+	#  - mformat: figure out LBA geometry as last resort if geometry
+	#    is neither specified in config and/or commandline, nor can be
+	#    queried from the device
+	# Manually specify c/h/s parameter, we specify 16 heads and
+	#   63 sectors per track and calculate tracks per head
+	
+	udevadm settle && \
+	mformat -i "$dev"@@"$(( 512 * EFI_START ))" -t "$((EFI_SIZE / (63 * 16) ))" -s 63 -h 16 -F "::" && \
+	  udevadm settle && \
 	  mmd   -i "$dev"@@"$(( 512 * EFI_START ))" "::efi" && \
+	  udevadm settle && \
 	  mmd   -i "$dev"@@"$(( 512 * EFI_START ))" "::efi/boot" && \
+	  udevadm settle && \
 	  mcopy -i "$dev"@@"$(( 512 * EFI_START ))" "${IPXE_EFI}" "::efi/boot/bootx64.efi"
 	
 	if [ "$?" -ne 0 ]; then
