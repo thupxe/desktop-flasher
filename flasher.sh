@@ -32,11 +32,52 @@ read_serial () {
 	lsblk --output SERIAL --nodeps --noheadings -- "$1"
 }
 
+uuidgen_fixed () {
+	# Work around https://github.com/karelzak/util-linux/issues/683
+	declare -r test_v_fix="e4651143-99bb-5707-b2a5-93f9534add4f"
+	declare -r test_v_bug="e4651143-99bb-5707-92a5-93f9534add4f"
+	local test_result="$(uuidgen --sha1 --namespace @dns --name " ")"
+	if [ "$test_result" = "$test_v_fix" ]; then
+		uuidgen_fixed () {
+			local ns=$1
+			local name=$2
+			uuidgen --sha1 --namespace "$ns" --name "$name"
+		}
+	elif [ "$test_result" = "$test_v_bug" ]; then
+		uuidgen_fixed () {
+			local ns=$1
+			local name=$2
+			case "$ns" in
+				@dns)
+					ns="6ba7b810-9dad-11d1-80b4-00c04fd430c8"
+				;;
+				@url)
+					ns="6ba7b811-9dad-11d1-80b4-00c04fd430c8"
+				;;
+				@oid)
+					ns="6ba7b812-9dad-11d1-80b4-00c04fd430c8"
+				;;
+				@x500)
+					ns="6ba7b814-9dad-11d1-80b4-00c04fd430c8"
+				;;
+			esac
+			local buguuid=$(uuidgen --sha1 --namespace "$ns" --name "$name")
+			local correct_byte=$((echo "$ns" | tr -d '-' | xxd -r -p; echo -n "$name") | sha1sum | cut -d" " -f 1 | head --byte 17 | tail --byte 1)
+			printf -v correct_byte "%x" $(( ( "0x$correct_byte" & 0x3 ) | 0x8 ))
+			echo "${buguuid:0:19}${correct_byte}${buguuid:20}"
+		}
+	else
+		echo "I do not know how to fix uuidgen" >&2
+		exit 1
+	fi
+	uuidgen_fixed "$@"
+}
+
 gen_cli_uuid () {
 	if [ -z "$CLI_NS_UUID" ]; then
-		CLI_NS_UUID="$(uuidgen --sha1 --namespace @dns --name "$CLI_NS")"
+		CLI_NS_UUID="$(uuidgen_fixed @dns "$CLI_NS")"
 	fi
-	uuidgen --sha1 --namespace "$CLI_NS_UUID" --name "$1"
+	uuidgen_fixed "$CLI_NS_UUID" "$1"
 }
 
 write_table () {
