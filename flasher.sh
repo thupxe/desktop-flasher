@@ -297,7 +297,7 @@ commit_work_on_disk () {
 	(
 		echo -n "${SAVE_CUR}${ESC}[$((line));1f${NO_WRAP}${COLOR_BUSY}●${COLOR_RST} ${dev}${CLEAR_RIGHT}${AUTO_WRAP}${RESTORE_CUR}"
 
-		if [ -b "$DEV_BY_PATH/$file" ]; then
+		if [ -b "$dev" ]; then
 			work_on_disk "$dev" > >(prepend "$dev: " >&3) 2>&1
 		fi
 		status="$?"
@@ -307,6 +307,13 @@ commit_work_on_disk () {
 			color="${COLOR_ERROR}"
 			error=": ${COLOR_ERROR}$(echo "$ERROR" | tr -d '\n\r')${COLOR_RST}"
 		fi
+
+		local sysfs_path="/sys/$(udevadm info --query=path --name="$dev")"
+		if [ -w "${sysfs_path}/device/delete" ]; then
+		  echo 1 > "${sysfs_path}/device/delete"
+		  echo "$dev: Ejected" >&3
+		fi
+
 		echo -n "${SAVE_CUR}${ESC}[$((line));1f${NO_WRAP}${color}●${COLOR_RST} ${dev}${error}${CLEAR_RIGHT}${AUTO_WRAP}${RESTORE_CUR}"
 	)&
 }
