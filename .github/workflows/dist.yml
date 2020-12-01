@@ -45,6 +45,8 @@ jobs:
   
   test:
     runs-on: ubuntu-18.04
+    env:
+      BUILD_MIRROR: "http://archive.ubuntu.com/ubuntu"
     needs:
       build
     steps:
@@ -53,6 +55,23 @@ jobs:
         with:
           name: Desktop Flasher
 
+      - name: Find out current mirror in the build environment
+        run: |
+          set +e
+          if [ "$(lsb_release -i -s )" != "Ubuntu" ]; then
+            exit 0;
+          fi
+          cat /etc/apt/sources.list | grep "^deb" |
+            grep "$(lsb_release -c -s)"  | awk '{print $2}' | sed 's@/$@@' |
+            while read url; do
+              if curl --head -sfL "${url}/dists/${SUIT}/InRelease" > /dev/null; then
+                echo "Found current mirror: ${url}" >&2
+                echo "BUILD_MIRROR=${url}"  >> "$GITHUB_ENV"
+                break;
+              fi
+            done
+          exit 0;
+
       - name: Install needed tools
         run: |
           sudo apt-get update
@@ -60,6 +79,10 @@ jobs:
           sudo apt-get -y --no-install-recommends install fdisk gdisk uuid-runtime mtools
           # tools needed to test result
           sudo apt-get -y --no-install-recommends install dosfstools qemu-system-x86 ovmf expect
+          # use new verison of seabios
+          echo "deb ${BUILD_MIRROR} focal main restricted" | sudo tee /etc/apt/sources.list.d/focal.list
+          sudo apt-get update
+          sudo apt-get -t focal -y --no-install-recommends install seabios
 
       - name: Setup test env
         run: |
@@ -116,6 +139,77 @@ jobs:
       - name: Test EFI filesystem
         run: |
           sudo fsck.msdos "${lodev}p3"
+
+      - name: Disarm loop device
+        run: |
+          sudo losetup -d "${lodev}"
+
+      - name: Test BIOS boot
+        run: |
+          mkdir -p tftp
+          cat > tftp/boot_test.ipxe << EOF
+          #!ipxe
+          echo IPXE_TEST_DEAD_BEEF
+          sleep 1
+          poweroff
+          EOF
+          expect << 'EOF'
+            set timeout 120
+            spawn sudo qemu-system-x86_64 -cpu kvm64 -machine pc \
+              -smp cpus=1,cores=1,sockets=1 -m 1G \
+              -chardev stdio,mux=on,id=char0 -nographic \
+              -monitor none \
+              -netdev user,id=net0,tftp=tftp/,bootfile=boot_test.ipxe \
+              -device virtio-net-pci,netdev=net0,id=net0,rombar=0 \
+              -serial chardev:char0 \
+              -device pvscsi,id=scsi -blockdev driver=raw,node-name=disk1,file.driver=file,file.filename=disk \
+              -device scsi-hd,id=hdd1,bus=scsi.0,serial=ABCD1234,drive=disk1,bootindex=1
+            expect {
+              "*IPXE_TEST_DEAD_BEEF" {}
+              eof             {puts "Meet eof"; exit 2}
+              timeout              {puts "Timeout"; exit 2}
+              "*No bootable device" {puts "Boot error"; exit 1}
+            }
+            expect {
+              eof {}
+              timeout {puts "Timeout"; exit 2}
+            }
+            exit 0
+          EOF
+
+      - name: Test UEFI boot
+        run: |
+          mkdir -p tftp
+          cat > tftp/boot_test.ipxe << EOF
+          #!ipxe
+          echo IPXE_TEST_DEAD_BEEF
+          sleep 1
+          poweroff
+          EOF
+          expect << 'EOF'
+            set timeout 120
+            spawn sudo qemu-system-x86_64 -cpu kvm64 -machine pc \
+              -smp cpus=1,cores=1,sockets=1 -m 1G \
+              -chardev stdio,mux=on,id=char0 -nographic \
+              -monitor none \
+              -netdev user,id=net0,tftp=tftp/,bootfile=boot_test.ipxe \
+              -device virtio-net-pci,netdev=net0,id=net0,rombar=0 \
+              -serial chardev:char0 \
+              -blockdev driver=raw,node-name=disk1,file.driver=file,file.filename=disk \
+              -device virtio-blk-pci,id=hdd1,serial=ABCD1234,drive=disk1,bootindex=1 \
+              -bios OVMF.fd
+            expect {
+              "*IPXE_TEST_DEAD_BEEF" {}
+              eof             {puts "Meet eof"; exit 2}
+              timeout              {puts "Timeout"; exit 2}
+              "*Shell>" {puts "Boot error"; exit 1}
+            }
+            expect {
+              eof {}
+              timeout {puts "Timeout"; exit 2}
+            }
+            exit 0
+          EOF
 
       - name: Pack up Failed image when failure
         id: pack_scene
