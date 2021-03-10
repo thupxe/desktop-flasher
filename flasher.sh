@@ -96,7 +96,7 @@ write_table () {
 	sfdisk --no-reread --no-tell-kernel -- "$dev" << EOF
 label: dos
 1                    $((BIOS_BOOT_START - 1))          ee -
-${BIOS_BOOT_START}   $((EFI_START - BIOS_BOOT_START))  ef *
+${BIOS_BOOT_START}   $((EFI_START - BIOS_BOOT_START))  fe *
 ${EFI_START}         -                                 ee -
 EOF
 	local mbr="$(dd if="$dev" bs=1 count=${MBR_SIZE} skip=${MBR_START} | base64 -w 0)"
