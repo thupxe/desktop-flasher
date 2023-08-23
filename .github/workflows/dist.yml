@@ -5,11 +5,11 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-22.04
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           submodules: 'recursive'
           fetch-depth: 0
@@ -38,20 +38,20 @@ jobs:
             ipxe/src/bin-x86_64-efi/ipxe.efi
 
       - name: Upload Asset
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: Desktop Flasher
           path: /tmp/dist/desktop-flasher.tar.gz
-  
+
   test:
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-22.04
     env:
       BUILD_MIRROR: "http://archive.ubuntu.com/ubuntu"
     needs:
       build
     steps:
       - name: Download built ipxe package
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: Desktop Flasher
 
@@ -221,7 +221,7 @@ jobs:
 
       - name: Upload failed image
         if: always() && steps.pack_scene.outputs.run == 'true'
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: Failed Disk Image
           path: disk.tar.gz
