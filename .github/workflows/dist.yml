@@ -78,11 +78,7 @@ jobs:
           # tools needed by flasher
           sudo apt-get -y --no-install-recommends install fdisk gdisk uuid-runtime mtools
           # tools needed to test result
-          sudo apt-get -y --no-install-recommends install dosfstools qemu-system-x86 ovmf expect
-          # use new verison of seabios
-          echo "deb ${BUILD_MIRROR} focal main restricted" | sudo tee /etc/apt/sources.list.d/focal.list
-          sudo apt-get update
-          sudo apt-get -t focal -y --no-install-recommends install seabios
+          sudo apt-get -y --no-install-recommends install dosfstools qemu-system-x86 ovmf expect seabios
 
       - name: Setup test env
         run: |
