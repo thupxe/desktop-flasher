@@ -219,6 +219,25 @@ write_disk () {
 	return 0
 }
 
+write_img () {
+        local dev="$1"
+        local clientrootfs="$2"
+        local ret
+        
+        if [ ! -e "$dev-part1" ]; then
+                ERROR="No part1 found"
+                return 1
+        fi
+                
+        mkfs.ext4 -F -d "$clientrootfs" "$dev-part1"
+        ret=$?  
+        if [ "$ret" -ne 0 ]; then
+                ERROR="mkfs failed"
+                return $ret
+        fi              
+        return 0        
+} 
+
 work_on_disk () {
 	local dev="$1"
 	local ret
@@ -231,6 +250,14 @@ work_on_disk () {
 	ret=$?
 	if [ "$ret" -ne 0 ]; then
 		return $ret
+	fi
+	if [ -n "$client_rootfs" ]; then
+		udevadm settle
+		write_img "$dev" "$client_rootfs"
+		ret=$?
+		if [ "$ret" -ne 0 ]; then
+			return $ret
+		fi
 	fi
 	return 0
 }
@@ -245,6 +272,7 @@ target_devices=( )
 write_once="false"
 compile_only="false"
 for_test_use="false"
+client_rootfs=""
 
 while [ "$#" -gt 0 ]; do
 	key="$1"
@@ -259,6 +287,11 @@ while [ "$#" -gt 0 ]; do
 		;;
 		__TEST__)
 			for_test_use="true"
+			shift
+		;;
+		--rootfs)
+			client_rootfs="$2"
+			shift
 			shift
 		;;
 		--)
@@ -299,11 +332,20 @@ pre_req_add_tool=( )
 if [ "$write_once" = "false" ]; then
 	pre_req_add_tool+=( "inotifywait" )
 fi
+if [ -n "$client_rootfs" ]; then
+	pre_req_add_tool+=( "mkfs.ext4" )
+fi
 
 pre_req "${pre_req_add_tool[@]}"
 if [ "${#target_devices[@]}" -eq 0 ]; then
 	echo "Device must be specified"
 	exit 1
+fi
+if [ -n "$client_rootfs" ]; then
+	if [ ! -d "$client_rootfs" ]; then
+		echo "Client rootfs $client_rootfs does not exist"
+		exit 1
+	fi
 fi
 if [ "$write_once" = "true" ]; then
 	for dsk in "${target_devices[@]}"; do
