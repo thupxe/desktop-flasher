@@ -428,6 +428,8 @@ onexit () {
 }
 
 declare -A disks
+declare -A disk_busy_state
+
 counter=1
 for dsk in "${target_devices[@]}"; do
 	if [[ "$dsk" == *"/"* ]]; then
@@ -438,6 +440,7 @@ for dsk in "${target_devices[@]}"; do
 		dsk="$(basename "$dsk")"
 	fi
 	disks["$dsk"]=$counter
+	disk_busy_state["$dsk"]=0
 	counter=$((counter + 1))
 done
 unset counter
@@ -447,17 +450,24 @@ trap onexit EXIT INT
 
 coproc inotify {
 	for dsk in "${!disks[@]}"; do
-		echo "$dsk"
+		echo "CREATE $dsk"
 	done
-	exec inotifywait --monitor --event create --format "%f" "$DEV_BY_PATH"
+	exec inotifywait --monitor --event create,moved_to,delete --format "%e %f" "$DEV_BY_PATH"
 }
 
 exec {inotify[1]}<&-
-while read file; do
+while read event file; do
 	if [ -z "$file" ]; then
 		continue
 	fi
 	if [ "${disks["${file}"]+_}" ]; then
-		commit_work_on_disk "${disks["${file}"]}" "${DEV_BY_PATH}/${file}"
+		if [ "$event" = "CREATE" ] || [ "$event" = "MOVED_TO" ]; then
+			if [ "${disk_busy_state["${file}"]}" = "0" ]; then
+				disk_busy_state["${file}"]=1;
+				commit_work_on_disk "${disks["${file}"]}" "${DEV_BY_PATH}/${file}"
+			fi
+		elif [ "$event" = "DELETE" ]; then
+			disk_busy_state["${file}"]=0;
+		fi
 	fi
 done <&"${inotify[0]}" 3> >(tee --append flasher.log)
